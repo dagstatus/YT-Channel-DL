@@ -17,6 +17,8 @@ from pyrogram.errors import MessageNotModified
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import UserNotParticipant, UserBannedInChannel
 import shutil
+from re import search as research
+from pathlib import Path
 
 
 is_downloading = False
@@ -27,27 +29,27 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger(__name__)
 
+
 # --- PROGRESS DEF --- #
 async def progress_bar(current, total, text, message, start):
-
     now = time.time()
-    diff = now-start
+    diff = now - start
     if round(diff % 10) == 0 or current == total:
-        percentage = current*100/total
-        speed = current/diff
-        elapsed_time = round(diff)*1000
-        eta = round((total-current)/speed)*1000
+        percentage = current * 100 / total
+        speed = current / diff
+        elapsed_time = round(diff) * 1000
+        eta = round((total - current) / speed) * 1000
         ett = eta + elapsed_time
 
         elapsed_time = TimeFormatter(elapsed_time)
         ett = TimeFormatter(ett)
 
-        progress = "[{0}{1}] \n\n🔹Progress: {2}%\n".format(
+        progress = "[{0}{1}] \n\n🔹Прогресс: {2}%\n".format(
             ''.join(["◼️" for i in range(math.floor(percentage / 5))]),
             ''.join(["◻️" for i in range(20 - math.floor(percentage / 5))]),
             round(percentage, 2))
 
-        tmp = progress + "{0} of {1}\n\n️🔹Speed: {2}/s\n\n🔹ETA: {3}\n".format(
+        tmp = progress + "{0} of {1}\n\n️🔹Скорость: {2}/s\n\n🔹Время: {3}\n".format(
             humanbytes(current),
             humanbytes(total),
             humanbytes(speed),
@@ -55,19 +57,20 @@ async def progress_bar(current, total, text, message, start):
             ett if ett != '' else "0 s"
         )
 
-        try :
+        try:
             await message.edit(
-                text = '{}.\n{}'.format(text, tmp)
+                text='{}.\n{}'.format(text, tmp)
             )
         except:
             pass
+
 
 def humanbytes(size):
     # https://stackoverflow.com/a/49361727/4723940
     # 2**10 = 1024
     if not size:
         return ""
-    power = 2**10
+    power = 2 ** 10
     n = 0
     Dic_powerN = {0: ' ', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
     while size > power:
@@ -82,19 +85,25 @@ def TimeFormatter(milliseconds: int) -> str:
     hours, minutes = divmod(minutes, 60)
     days, hours = divmod(hours, 24)
     tmp = ((str(days) + "d, ") if days else "") + \
-        ((str(hours) + "h, ") if hours else "") + \
-        ((str(minutes) + "m, ") if minutes else "") + \
-        ((str(seconds) + "s, ") if seconds else "") + \
-        ((str(milliseconds) + "ms, ") if milliseconds else "")
+          ((str(hours) + "h, ") if hours else "") + \
+          ((str(minutes) + "m, ") if minutes else "") + \
+          ((str(seconds) + "s, ") if seconds else "") + \
+          ((str(milliseconds) + "ms, ") if milliseconds else "")
     return tmp[:-2]
 
+
 # --- YTDL DOWNLOADER --- #
-def ytdl_dowload(result, opts):
+def ytdl_dowload(result, opts, client, message):
     global is_downloading
     try:
         with YoutubeDL(opts) as ytdl:
             ytdl.cache.remove()
-            ytdl_data = ytdl.extract_info(result)
+            ytdl_data = ytdl.extract_info(result, download=False)
+            if ytdl_data.get('duration') < 1800:
+                ytdl.download(result)
+            else:
+                client.send_message(message.chat.id, "`Видео слишком длинное`")
+
     except Exception as e:
         is_downloading = False
         print(e)
@@ -103,7 +112,8 @@ def ytdl_dowload(result, opts):
 UPDTE_CHNL = os.environ.get("UPDTE_CHNL")
 LOG_CHNL = os.environ.get("LOG_CHNL")
 
-@Client.on_message(filters.regex(pattern=".*http.* (.*)"))
+
+@Client.on_message(filters.regex(pattern=".*http.*"))
 async def uloader(client, message):
     global is_downloading
 
@@ -113,106 +123,124 @@ async def uloader(client, message):
 
     if is_downloading:
         return await message.reply_text(
-            "`Another download is in progress, try again after sometime.`",
+            "`Другое видео все еще скачивается, пожалуйста подождите`",
             quote=True
         )
 
     url = message.text.split(None, 1)[0]
-    typee = message.text.split(None, 1)[1]
-    if url.__contains__("/channel/") or url.__contains__("/c/"):
-        msg = await client.send_message(message.chat.id, '`Processing...`', reply_to_message_id=message.message_id)
+    if research('youtu', url):
+        msg = await client.send_message(message.chat.id, '`Подготовка...`', reply_to_message_id=message.message_id)
     else:
-        return await client.send_message(message.chat.id, '`I think this is invalid link...`', reply_to_message_id=message.message_id)
+        return await client.send_message(message.chat.id, '`Неверная ссылка...`', reply_to_message_id=message.message_id)
 
     out_folder = f"downloads/{uuid.uuid4()}/"
     if not os.path.isdir(out_folder):
         os.makedirs(out_folder)
 
-    if (os.environ.get("USE_HEROKU") == "True") and (typee == "audio"):
-        opts = {
-            'format':'bestaudio[ext=m4a]',
-            'cachedir':False,
-            'addmetadata':True,
-            'geo_bypass':True,
-            'nocheckcertificate':True,
-            'outtmpl':out_folder + '%(title)s.%(ext)s',
-            'quiet':False,
-            'logtostderr':False
-        }
-        video = False
-        song = True
-    elif (os.environ.get("USE_HEROKU") == "False") and (typee == "audio"):
-        opts = {
-            'format':'bestaudio',
-            'cachedir':False,
-            'addmetadata':True,
-            'key':'FFmpegMetadata',
-            'prefer_ffmpeg':True,
-            'geo_bypass':True,
-            'nocheckcertificate':True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '320',
-            }],
-            'outtmpl':out_folder + '%(title)s.%(ext)s',
-            'quiet':False,
-            'logtostderr':False
-        }
-        video = False
-        song = True
+    # if (os.environ.get("USE_HEROKU") == "True") and (typee == "audio"):
+    #     opts = {
+    #         'format':'bestaudio[ext=m4a]',
+    #         'cachedir':False,
+    #         'addmetadata':True,
+    #         'geo_bypass':True,
+    #         'nocheckcertificate':True,
+    #         'outtmpl':out_folder + '%(title)s.%(ext)s',
+    #         'quiet':False,
+    #         'logtostderr':False
+    #     }
+    #     video = False
+    #     song = True
+    # elif (os.environ.get("USE_HEROKU") == "False") and (typee == "audio"):
+    #     opts = {
+    #         'format':'bestaudio',
+    #         'cachedir':False,
+    #         'addmetadata':True,
+    #         'key':'FFmpegMetadata',
+    #         'prefer_ffmpeg':True,
+    #         'geo_bypass':True,
+    #         'nocheckcertificate':True,
+    #         'postprocessors': [{
+    #             'key': 'FFmpegExtractAudio',
+    #             'preferredcodec': 'mp3',
+    #             'preferredquality': '320',
+    #         }],
+    #         'outtmpl':out_folder + '%(title)s.%(ext)s',
+    #         'quiet':False,
+    #         'logtostderr':False
+    #     }
+    #     video = False
+    #     song = True
+    #
+    # if (os.environ.get("USE_HEROKU") == "False") and (typee == "video"):
+    #     opts = {
+    #         'format':'best',
+    #         'cachedir':False,
+    #         'addmetadata':True,
+    #         'xattrs':True,
+    #         'key':'FFmpegMetadata',
+    #         'prefer_ffmpeg':True,
+    #         'geo_bypass':True,
+    #         'nocheckcertificate':True,
+    #         'postprocessors': [{
+    #             'key': 'FFmpegVideoConvertor',
+    #             'preferedformat': 'mp4'},],
+    #         'outtmpl':out_folder + '%(title)s.%(ext)s',
+    #         'logtostderr':False,
+    #         'quiet':False
+    #     }
+    #     song = False
+    #     video = True
+    # elif (os.environ.get("USE_HEROKU") == "True") and (typee == "video"):
+    #     opts = {
+    #         'format':'best',
+    #         'cachedir':False,
+    #         'addmetadata':True,
+    #         'xattrs':True,
+    #         'geo_bypass':True,
+    #         'nocheckcertificate':True,
+    #         'videoformat':'mp4',
+    #         'outtmpl':out_folder + '%(title)s.%(ext)s',
+    #         'logtostderr':False,
+    #         'quiet':False
+    #     }
+    #     song = False
+    #     video = True
 
-    if (os.environ.get("USE_HEROKU") == "False") and (typee == "video"):
-        opts = {
-            'format':'best',
-            'cachedir':False,
-            'addmetadata':True,
-            'xattrs':True,
-            'key':'FFmpegMetadata',
-            'prefer_ffmpeg':True,
-            'geo_bypass':True,
-            'nocheckcertificate':True,
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4'},],
-            'outtmpl':out_folder + '%(title)s.%(ext)s',
-            'logtostderr':False,
-            'quiet':False
-        }
-        song = False
-        video = True
-    elif (os.environ.get("USE_HEROKU") == "True") and (typee == "video"):
-        opts = {
-            'format':'best',
-            'cachedir':False,
-            'addmetadata':True,
-            'xattrs':True,
-            'geo_bypass':True,
-            'nocheckcertificate':True,
-            'videoformat':'mp4',
-            'outtmpl':out_folder + '%(title)s.%(ext)s',
-            'logtostderr':False,
-            'quiet':False
-        }
-        song = False
-        video = True
+    opts = {
+        'format': 'best',
+        'cachedir': False,
+        'addmetadata': True,
+        'xattrs': True,
+        'key': 'FFmpegMetadata',
+        'prefer_ffmpeg': True,
+        'geo_bypass': True,
+        'nocheckcertificate': True,
+        'postprocessors': [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4'}, ],
+        'outtmpl': out_folder + '%(title)s.%(ext)s',
+        'logtostderr': False,
+        'quiet': False
+    }
+    song = False
+    video = True
     is_downloading = True
 
     if LOG_CHNL:
-        await client.send_message(LOG_CHNL, f"Name: {message.from_user.mention}\nURL: {url} {typee}")
+        await client.send_message(LOG_CHNL, f"Name: {message.from_user.mention}\nURL: {url}")
 
     try:
-        await msg.edit("`Downloading...`")
+        await msg.edit("`Загрузка...`")
         loop = get_running_loop()
-        await loop.run_in_executor(None, partial(ytdl_dowload, url, opts))
+        await loop.run_in_executor(None, partial(ytdl_dowload, url, opts, client, message))
         filename = sorted(get_lst_of_files(out_folder, []))
     except Exception as e:
         is_downloading = False
-        return await msg.edit("Error: "+e)
+        return await msg.edit("Ошибка: " + e)
 
     c_time = time.time()
     try:
-        await msg.edit("`Uploading...`")
+        await msg.edit("`Отправка...`")
     except MessageNotModified:
         pass
 
@@ -222,7 +250,7 @@ async def uloader(client, message):
                 if single_file.endswith((".mp4", ".mp3", ".flac", ".m4a", ".webm")):
                     try:
                         audio_name = os.path.basename(single_file)
-                        audioname = audio_name.replace('.'+audio_name.rsplit(".", 1)[1], '')
+                        audioname = audio_name.replace('.' + audio_name.rsplit(".", 1)[1], '')
                         tnow = time.time()
                         fduration, fwidth, fheight = get_metadata(single_file)
                         await message.reply_chat_action("upload_audio")
@@ -252,7 +280,7 @@ async def uloader(client, message):
                 if single_file.endswith((".mp4", ".m4a", ".mp3", ".flac", ".webm")):
                     try:
                         video_name = os.path.basename(single_file)
-                        videoname = video_name.replace('.'+video_name.rsplit(".", 1)[1], '')
+                        videoname = video_name.replace('.' + video_name.rsplit(".", 1)[1], '')
                         tnow = time.time()
                         fduration, fwidth, fheight = get_metadata(single_file)
                         await message.reply_chat_action("upload_video")
@@ -266,14 +294,24 @@ async def uloader(client, message):
                             height=fheight,
                             progress=progress_bar,
                             progress_args=(
-                                "Uploading..", msg, c_time
+                                "Отправка..", msg, c_time
                             )
                         )
                     except Exception as e:
                         await msg.edit("{} caused `{}`".format(single_file, str(e)))
                         continue
                     await message.reply_chat_action("cancel")
-                    os.remove(single_file)
+                    for _ in range(5):
+                        my_file = Path(single_file)
+                        if my_file.exists():
+                            try:
+                                time.sleep(2)
+                                os.remove(single_file)
+                                break
+                            except:
+                                time.sleep(2)
+                                LOGGER.warning('Can delete file')
+
         LOGGER.info(f"Clearing {out_folder}")
         shutil.rmtree(out_folder)
         await del_old_msg_send_msg(msg, client, message)
@@ -289,9 +327,11 @@ def get_lst_of_files(input_directory, output_lst):
         output_lst.append(current_file_name)
     return output_lst
 
+
 async def del_old_msg_send_msg(msg, client, message):
     await msg.delete()
-    await client.send_message(message.chat.id, "`Upload Success!`")
+    await client.send_message(message.chat.id, "`Загрузка окончена!`")
+
 
 def get_metadata(file):
     fwidth = None
@@ -306,6 +346,7 @@ def get_metadata(file):
         if metadata.has("height"):
             fheight = metadata.get("height")
     return fduration, fwidth, fheight
+
 
 async def pyro_fsub(c, message, fsub):
     try:
@@ -340,5 +381,6 @@ async def pyro_fsub(c, message, fsub):
             parse_mode="markdown",
             disable_web_page_preview=True)
         return False
+
 
 print("> Bot Started ")

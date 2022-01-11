@@ -8,11 +8,11 @@
     },
     "APP_ID": {
       "description": "Get this value from my.telegram.org! Please do not steal.",
-      "value": ""
+      "value": "19757625"
     },
     "API_HASH": {
       "description": "Get this value from my.telegram.org! Please do not steal.",
-      "value": ""
+      "value": "656dcd2dc2b9731c08dc524abf1417d6\n"
     },
     "LOG_CHNL": {
       "description": "A channel or group ID to log user activities.",
@@ -21,7 +21,7 @@
     },
     "UPDTE_CHNL": {
       "description": "Channel username(without @) to work force sub! Bot should be admin in ur chnl",
-      "value": "",
+      "value": "dagstatus",
       "required": false
     },
     "USE_HEROKU": {
